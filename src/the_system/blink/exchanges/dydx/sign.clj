@@ -7,7 +7,8 @@
             [pandect.algo.sha256 :as sha256]
             [the-system.blink.exchanges.dydx.pedersen :as pedersen]
             [taoensso.encore :as enc]
-            [clojure.walk :as walk])
+            [clojure.walk :as walk]
+            [taoensso.tufte :as tufte])
   (:import (java.math RoundingMode)))
 
 (set! *warn-on-reflection* true)
@@ -163,32 +164,31 @@
   whereas here it is split out to clarify (slightly) what is going on."
   [{:keys [asset-ids quantums buying-synthetic? position-id nonce expiration-epoch-seconds]}
    {:keys [field-bit-lengths order-prefix order-padding-bits]}]
-  (pedersen/biginteger-math
-    (let [[buyq sellq buya sella]
-          (if buying-synthetic?
-            [(:synthetic quantums) (:collateral quantums)
-             (:synthetic asset-ids) (:collateral asset-ids)]
-            [(:collateral quantums) (:synthetic quantums)
-             (:collateral asset-ids) (:synthetic asset-ids)])
-          ;field bit length
-          fbl (fn [f] (get field-bit-lengths f))]
-      [[{:name :assets-hash
-         :value [[{:name :asset-id-sell :value sella}
-                  {:name :asset-id-buy :value buya}]
-                 {:name :asset-id-fee :value (get asset-ids :fee)}]}
-        {:name :part-1
-         :value (-> sellq
-                    (shift-plus (fbl :quantums-amount) buyq)
-                    (shift-plus (fbl :quantums-amount) (:fee quantums))
-                    (shift-plus (fbl :nonce) nonce))}]
-       {:name :part-2
-        :value (-> (biginteger order-prefix)
-                   (shift-plus (fbl :position-id) position-id)
-                   (shift-plus (fbl :position-id) position-id)
-                   (shift-plus (fbl :position-id) position-id)
-                   (shift-plus (fbl :expiration-epoch-seconds)
-                               (biginteger expiration-epoch-seconds))
-                   (shift-left order-padding-bits))}])))
+  (let [[buyq sellq buya sella]
+        (if buying-synthetic?
+          [(:synthetic quantums) (:collateral quantums)
+           (:synthetic asset-ids) (:collateral asset-ids)]
+          [(:collateral quantums) (:synthetic quantums)
+           (:collateral asset-ids) (:synthetic asset-ids)])
+        ;field bit length
+        fbl (fn [f] (get field-bit-lengths f))]
+    [[{:name :assets-hash
+       :value [[{:name :asset-id-sell :value sella}
+                {:name :asset-id-buy :value buya}]
+               {:name :asset-id-fee :value (get asset-ids :fee)}]}
+      {:name :part-1
+       :value (-> sellq
+                  (shift-plus (fbl :quantums-amount) buyq)
+                  (shift-plus (fbl :quantums-amount) (:fee quantums))
+                  (shift-plus (fbl :nonce) nonce))}]
+     {:name :part-2
+      :value (-> (biginteger order-prefix)
+                 (shift-plus (fbl :position-id) position-id)
+                 (shift-plus (fbl :position-id) position-id)
+                 (shift-plus (fbl :position-id) position-id)
+                 (shift-plus (fbl :expiration-epoch-seconds)
+                             (biginteger expiration-epoch-seconds))
+                 (shift-left order-padding-bits))}]))
 
 
 (defn hash-merkle-tree
@@ -205,29 +205,74 @@
 
 
 (defn starkware-hash
-  "The hash that needs to be signed for an order placement."
+  "The hash that needs to be signed for an order placement.
+
+  Note: This is slow. Benchmarked at 4.116ms (35.251ms in the dYdX reference
+  client)."
   [starkware-order starkware-constants]
   (-> starkware-order
       (starkware-merkle-tree starkware-constants)
       (hash-merkle-tree pedersen/pedersen-hash)))
 
+
 (comment
 
   (require 'criterium.core)
 
+  (def dydx-order
+    {:position-id 1
+     :client-id "91364379829165"
+     :market "BTC-USD"
+     :side "SELL"
+     :human-size 100M
+     :human-price 18000M
+     :human-limit-fee 0.015M
+     :expiration-epoch-seconds 1671658220})
+
+  (def stark-order
+    (starkware-order dydx-order starkware-constants))
+
+  (def stark-merkle
+    (starkware-merkle-tree stark-order starkware-constants))
+
+  (enc/qb
+    100
+    (starkware-hash stark-order starkware-constants)
+    (starkware-hash-fast stark-order starkware-constants))
+
+
+
+  ;; Reference client with 1000 runs took 35.251 ms per run
+  ;; Clojure client took 4.116 ms per run
   (criterium.core/quick-bench
-    (starkware-hash
-      (starkware-order
-        {:position-id 1
-         :client-id "91364379829165"
-         :market "BTC-USD"
-         :side "SELL"
-         :human-size 100M
-         :human-price 18000M
-         :human-limit-fee 0.015M
-         :expiration-epoch-seconds 1671658220}
-        starkware-constants)
-      starkware-constants))
+    (starkware-hash stark-order starkware-constants))
+
+  (tufte/add-basic-println-handler! {})
+  (tufte/profile {}
+    (dotimes [_ 100]
+      (starkware-hash stark-order starkware-constants)))
+
+  (enc/qb
+    100
+    (starkware-order dydx-order starkware-constants)
+    (starkware-merkle-tree stark-order starkware-constants)
+    (hash-merkle-tree stark-merkle pedersen/pedersen-hash))
+
+  (starkware-hash
+    (starkware-order
+      {:position-id 1
+       :client-id "91364379829165"
+       :market "BTC-USD"
+       :side "SELL"
+       :human-size 100M
+       :human-price 18000M
+       :human-limit-fee 0.015M
+       :expiration-epoch-seconds 1671658220}
+      starkware-constants)
+    starkware-constants)
+
+  (starkware-merkle-tree *2 starkware-constants)
+  (= *1 stark-merkle)
 
   (= *1 3177457393241883988643079605937866346697240808070109220974724930828805695181)
 
