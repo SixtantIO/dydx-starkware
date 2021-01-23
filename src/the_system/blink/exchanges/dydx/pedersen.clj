@@ -118,6 +118,14 @@
 
 
 (comment
+  ;; It doesn't produce negative hashes, right? That would ruin Starkware ECDSA
+  (dotimes [_ 50000]
+    (assert
+      (pos?
+        (pedersen-hash (rand-int Integer/MAX_VALUE) (rand-int Integer/MAX_VALUE))))))
+
+
+(comment
   ;;; Benchmark
 
   (assert ; does it still work

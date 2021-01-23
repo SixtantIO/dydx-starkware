@@ -1,7 +1,31 @@
 (ns the-system.blink.exchanges.dydx.sign-test
   (:require [clojure.test :refer :all]
             [the-system.blink.exchanges.dydx.sign :refer :all]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [taoensso.encore :as enc]))
+
+
+(def asset-meta-data
+  ;; TODO: Move this up into dydx.clj when writing the exchange namespace, and
+  ;;       just pass it in from there.
+  "Right now this is fixed, but we should treat this data as if we could get it
+  from an endpoint."
+  {:collateral-asset "USDC"
+   :>synthetic-asset {"BTC-USD"  "BTC"
+                      "ETH-USD"  "ETH"
+                      "LINK-USD" "LINK"}
+   :>asset-id        (enc/map-vals
+                       biginteger
+                       {"USDC" 0x02c04d8b650f44092278a7cb1e1028c82025dff622db96c934b611b84cc8de5a
+                        "BTC"  0
+                        "ETH"  1
+                        "LINK" 2})
+   :>lots            (enc/map-vals
+                       biginteger
+                       {"USDC" 1e6M
+                        "BTC"  1e10M
+                        "ETH"  1e8M
+                        "LINK" 1e7M})})
 
 
 (def test-dydx-order
@@ -26,8 +50,8 @@
 (deftest starkware-hash-test
   (testing "Starkware order hashing"
     (is (= (-> test-dydx-order
-               (starkware-order starkware-constants)
-               (starkware-hash starkware-constants))
+               (starkware-order asset-meta-data)
+               (starkware-hash))
            0x706608d10cb2c2b8f7be81f23468ae37452c45bdf579b276f5d6870a6a966cd))))
 
 
@@ -37,8 +61,8 @@
 (deftest rfc6979-k-value-test
   (testing "Deterministic K value for starkware's variant of rfc6979"
     (is (= (-> test-dydx-order
-               (starkware-order starkware-constants)
-               (starkware-hash starkware-constants)
+               (starkware-order asset-meta-data)
+               (starkware-hash)
                (rfc6979-k-value test-stark-private-key nil))
            826191475741237249337586902222325815624295015428541147040892596733507827303))))
 
@@ -47,16 +71,16 @@
 (deftest starkware-sign-test
   (testing "Signature for starkware's variation on classic ECDSA"
     (is (= (-> test-dydx-order
-               (starkware-order starkware-constants)
-               (starkware-hash starkware-constants)
+               (starkware-order asset-meta-data)
+               (starkware-hash)
                (starkware-sign test-stark-private-key))
            [1147880685947926282563952332969533863428191652304924879656374215031587701320
             1613647208029372355060822186979972378103961091500099929751858255667859304961])
         "(r, s) signature pair matches")
 
     (is (= (-> test-dydx-order
-               (starkware-order starkware-constants)
-               (starkware-hash starkware-constants)
+               (starkware-order asset-meta-data)
+               (starkware-hash)
                (starkware-sign test-stark-private-key)
                (encode-sig))
            "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201")
