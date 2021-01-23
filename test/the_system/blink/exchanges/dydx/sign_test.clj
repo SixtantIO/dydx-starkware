@@ -1,6 +1,7 @@
 (ns the-system.blink.exchanges.dydx.sign-test
   (:require [clojure.test :refer :all]
-            [the-system.blink.exchanges.dydx.sign :refer :all]))
+            [the-system.blink.exchanges.dydx.sign :refer :all]
+            [clojure.data.json :as json]))
 
 
 (def test-dydx-order
@@ -60,3 +61,34 @@
                (encode-sig))
            "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201")
         "encoded signature matches")))
+
+
+(def test-request
+  {:path   "/v3/orders"
+   :method :post
+   :inst   #inst "2021-01-23T17:38:04.039Z"
+   :body   (json/write-str
+             ;; Ensure the same JSON string as the one I generated in the
+             ;; reference implementation
+             (array-map
+               :market "BTC-USD",
+               :side "SELL",
+               :type "LIMIT",
+               :timeInForce "GTT",
+               :size "100",
+               :price "18000",
+               :limitFee "0.015",
+               :expiration "2022-12-21T21:30:20.200Z",
+               :postOnly false,
+               :clientId "91364379829165",
+               :signature "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201"))})
+
+
+(def test-dydx-private-key
+  (biginteger 0x2a709f4253e841f274d192b8270d7a7c41503c037b556509d399dddf79400b1))
+
+
+(deftest sign-request-test
+  (testing "dydx request signature"
+    (is (= (-> test-request (sign-request test-dydx-private-key) :sig)
+           "05bdd9f24ad4ecec1a34efdf8f05a6765240ba6b1a5e49d9352fbda41968e22205db4f23bf03a58e2c5ad8ece4aefa4799e35306454a4fa3e3a14a782e9dfa65"))))

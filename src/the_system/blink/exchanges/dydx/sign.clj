@@ -1,3 +1,8 @@
+;; TODO: Once this is all cleaned up, benchmark standard order placement in this
+;;       implementation and in the reference implementation.
+;; TODO: Figure out how 'constants' should be organized and split out. (And,
+;;       which are really constant? Seems like asset ids, etc. might change,
+;;       whereas message protocol level stuff should stay the same?)
 (ns the-system.blink.exchanges.dydx.sign
   "Signature schemes for STARK and dYdX.
 
@@ -8,71 +13,14 @@
             [taoensso.encore :as enc]
             [clojure.walk :as walk]
             [taoensso.tufte :as tufte]
-            [io.sixtant.rfc6979 :as rfc6979])
+            [io.sixtant.rfc6979 :as rfc6979]
+            [the-system.utils :as utils]
+            [clojure.string :as string])
   (:import (java.math RoundingMode)
            (org.bouncycastle.math.ec ECCurve$Fp)))
 
 
 (set! *warn-on-reflection* true)
-
-
-(comment
-  (def test-stark-priv "0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3")
-
-  (json/read-str "{\"market\": \"BTC-USD\", \"side\": \"SELL\", \"type\": \"LIMIT\", \"timeInForce\": \"GTT\", \"size\": \"100\", \"price\": \"18000\", \"limitFee\": \"0.015\", \"expiration\": \"2022-12-21T21:30:20.200Z\", \"cancelId\": null, \"triggerPrice\": null, \"trailingPercent\": null, \"postOnly\": false, \"clientId\": \"91364379829165\", \"signature\": \"0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201\"}")
-
-  {"trailingPercent" nil,
-   "limitFee" "0.015",
-   "side" "SELL",
-   "triggerPrice" nil,
-   "cancelId" nil,
-   "signature" "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201",
-   "postOnly" false,
-   "clientId" "91364379829165",
-   "type" "LIMIT",
-   "expiration" "2022-12-21T21:30:20.200Z",
-   "size" "100",
-   "price" "18000",
-   "timeInForce" "GTT",
-   "market" "BTC-USD"}
-  )
-
-
-(comment
-  ;; order_to_sign = SignableOrder(
-  ;;                               position_id=position_id,
-  ;;                               client_id=client_id,
-  ;;                               market=market,
-  ;;                               side=side,
-  ;;                               human_size=size,
-  ;;                               human_price=price,
-  ;;                               human_limit_fee=limit_fee,
-  ;;                               expiration_epoch_seconds=iso_to_epoch_seconds(expiration),
-  ;;                               )
-  ;; order_signature = order_to_sign.sign(self.stark_private_key)
-
-  (long (/ (inst-ms #inst"2022-12-21T21:30:20.200Z") 1000))
-
-  {:position-id 1
-   :client-id "91364379829165"
-   :market "BTC-USD"
-   :side "SELL"
-   :human-size 100M
-   :human-price 18000M
-   :human-limit-fee 0.015M
-   :expiration-epoch-seconds 1671658220}
-
-  ; from dydx3.starkex.order import SignableOrder
-  ; o = SignableOrder(position_id=1, client_id="91364379829165", market="BTC-USD", side="SELL", human_size="100", human_price="18000", human_limit_fee="0.015", expiration_epoch_seconds=1671658220)
-  ; Message: ["LIMIT_ORDER_WITH_FEES", 0, 1244395526148093605117595054168172062218752879259769683800039479765231001178, 1244395526148093605117595054168172062218752879259769683800039479765231001178, 1000000000000, 1800000000000, 15000, false, 1, 841357518, 1671658220]
-
-  ; o.sign('0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3')
-  ; '0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201'
-
-  ; o._calculate_hash()
-  ; 3177457393241883988643079605937866346697240808070109220974724930828805695181
-
-  )
 
 
 (defn to-quantums
@@ -165,7 +113,7 @@
 ;;; [1] https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm
 
 
-(defn modular-multiplicative-inverse ; nb. called div-mod in dydx reference code
+(defn modular-multiplicative-inverse ; nb called div-mod in dydx reference code
   "Find x in [0, p) such that (m * x) % p = n"
   [n m p]
   (let [n (biginteger n)
@@ -177,7 +125,7 @@
 
 
 (defn- invalid-signature?
-  [^BigInteger k ^BigInteger r ^BigInteger s ^BigInteger msg-hash ^BigInteger private-key]
+  [^BigInteger r ^BigInteger s ^BigInteger msg-hash ^BigInteger private-key]
   (let [max-value (.subtract
                     (.pow BigInteger/TWO (:n-element-bits-ecdsa starkware-constants))
                     BigInteger/ONE)]
@@ -204,7 +152,7 @@
   ;; in [section 3.6](https://tools.ietf.org/html/rfc6979#section-3.6)
   (loop [extra-entropy nil] ; They use: nil, 1, 2, ...
     (let [k (rfc6979-k-value msg-hash private-key extra-entropy)
-          ;; Difference: in classical ECDSA, r = (mod (ec-multiply k) n)
+          ; in classical ECDSA, r = (mod (ec-multiply k) n)
           r (ec-multiply k)
           ; n.b. `s` is called `w` in dydx reference implementation (this is
           ; an intermediate s in their version of ECDSA)
@@ -212,7 +160,7 @@
               k
               (.add (.multiply r private-key) msg-hash)
               (:ec-curve-order starkware-constants))]
-      (if (invalid-signature? k r s msg-hash private-key)
+      (if (invalid-signature? r s msg-hash private-key)
         (recur (inc (or extra-entropy 0)))
         (let [s (modular-multiplicative-inverse
                   BigInteger/ONE
@@ -222,9 +170,7 @@
 
 
 ;; Instead of DER encoding, they just concat the hex strings
-(defn encode-sig [[r s]]
-  (let [hex32str (fn [^BigInteger n] (format "%064x" n))]
-    (str (hex32str r) (hex32str s))))
+(defn encode-sig [[r s]] (format "%064x%064x" r s))
 
 
 (let [nonce-bit-length (get-in starkware-constants [:field-bit-lengths :nonce])
@@ -327,71 +273,45 @@
       (hash-merkle-tree pedersen/pedersen-hash)))
 
 
-(comment
-
-  (require 'criterium.core)
-
-  (def dydx-order
-    {:position-id 1
-     :client-id "91364379829165"
-     :market "BTC-USD"
-     :side "SELL"
-     :human-size 100M
-     :human-price 18000M
-     :human-limit-fee 0.015M
-     :expiration-epoch-seconds 1671658220})
-
-  (def stark-order
-    (starkware-order dydx-order starkware-constants))
-
-  (def stark-merkle
-    (starkware-merkle-tree stark-order starkware-constants))
-
-  (def stark-hash
-    (starkware-hash stark-order starkware-constants))
-
-  priv
-  (enc/qb
-    100
-    (starkware-hash stark-order starkware-constants)
-    (starkware-hash-fast stark-order starkware-constants))
+;; TODO: Depending on what else needs to happen, this stuff can probably happen
+;;       directly in the endpoint
+(defn dydx-order
+  [{:keys [market side ^BigDecimal qty ^BigDecimal price iid post-only?]}
+   ^BigDecimal limit-fee
+   expiration]
+  {:market      (utils/show-upper market "-")
+   :side        (case side :bids "BUY" :asks "SELL")
+   :type        "LIMIT"
+   :postOnly    (if post-only? true false)
+   :size        (.toPlainString (.stripTrailingZeros qty))
+   :price       (.toPlainString (.stripTrailingZeros price))
+   :limitFee    (.toPlainString (.stripTrailingZeros limit-fee))
+   :expiration  expiration
+   :timeInForce "GTT"
+   :clientId    iid})
 
 
+(defn sign-order [dydx-order stark-private-key]
+  (-> {:position-id              1
+       :client-id                (:clientId dydx-order)
+       :market                   (:market dydx-order)
+       :side                     (:side dydx-order)
+       :human-size               (:size dydx-order)
+       :human-price              (:price dydx-order)
+       :human-limit-fee          (:limitFee dydx-order)
+       :expiration-epoch-seconds (utils/inst-s (:expiration dydx-order))}
+      (starkware-order starkware-constants)
+      (starkware-hash starkware-constants)
+      (starkware-sign stark-private-key)
+      (encode-sig)))
 
-  ;; Reference client with 1000 runs took 35.251 ms per run
-  ;; Clojure client took 4.116 ms per run
-  (criterium.core/quick-bench
-    (starkware-hash stark-order starkware-constants))
 
-  (tufte/add-basic-println-handler! {})
-  (tufte/profile {}
-    (dotimes [_ 100]
-      (starkware-hash stark-order starkware-constants)))
-
-  (enc/qb
-    100
-    (starkware-order dydx-order starkware-constants)
-    (starkware-merkle-tree stark-order starkware-constants)
-    (hash-merkle-tree stark-merkle pedersen/pedersen-hash))
-
-  (starkware-hash
-    (starkware-order
-      {:position-id 1
-       :client-id "91364379829165"
-       :market "BTC-USD"
-       :side "SELL"
-       :human-size 100M
-       :human-price 18000M
-       :human-limit-fee 0.015M
-       :expiration-epoch-seconds 1671658220}
-      starkware-constants)
-    starkware-constants)
-
-  (starkware-merkle-tree *2 starkware-constants)
-  (= *1 stark-merkle)
-
-  (= *1 3177457393241883988643079605937866346697240808070109220974724930828805695181)
-
-  (.toString *1 16)
-
-  )
+(defn sign-request [{:keys [path method inst body] :as req} dydx-private-key]
+  (let [iso-ts (utils/pr-inst-iso inst)
+        method (string/upper-case (name method))
+        message (str iso-ts method path body)
+        mhash (-> ^String (sha256/sha256 message)
+                  (BigInteger. 16)
+                  (.shiftRight 5))
+        sig (encode-sig (starkware-sign mhash dydx-private-key))]
+    (assoc req :sig sig)))
