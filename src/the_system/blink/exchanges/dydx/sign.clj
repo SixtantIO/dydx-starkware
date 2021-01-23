@@ -3,15 +3,18 @@
 
   See: https://docsv3.dydx.exchange/#authentication"
   (:require [clojure.data.json :as json]
-            [the-system.units :as units]
             [pandect.algo.sha256 :as sha256]
             [the-system.blink.exchanges.dydx.pedersen :as pedersen]
             [taoensso.encore :as enc]
             [clojure.walk :as walk]
-            [taoensso.tufte :as tufte])
-  (:import (java.math RoundingMode)))
+            [taoensso.tufte :as tufte]
+            [io.sixtant.rfc6979 :as rfc6979])
+  (:import (java.math RoundingMode)
+           (org.bouncycastle.math.ec ECCurve$Fp)))
+
 
 (set! *warn-on-reflection* true)
+
 
 (comment
   (def test-stark-priv "0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3")
@@ -88,31 +91,140 @@
 
 
 (def starkware-constants
-  {:collateral-asset   "USDC"
-   :>synthetic-asset   {"BTC-USD"  "BTC"
-                        "ETH-USD"  "ETH"
-                        "LINK-USD" "LINK"}
-   :>asset-id          (enc/map-vals
-                         biginteger
-                         {"USDC" 0x02c04d8b650f44092278a7cb1e1028c82025dff622db96c934b611b84cc8de5a
-                          "BTC"  0
-                          "ETH"  1
-                          "LINK" 2})
-   :>lots              (enc/map-vals
-                         biginteger
-                         {"USDC" 1e6M
-                          "BTC"  1e10M
-                          "ETH"  1e8M
-                          "LINK" 1e7M})
-   :field-bit-lengths  {:asset-id-synthetic       128
-                        :asset-id-collateral      250
-                        :asset-id-fee             250
-                        :quantums-amount          64
-                        :nonce                    32
-                        :position-id              64
-                        :expiration-epoch-seconds 32}
-   :order-prefix       3
-   :order-padding-bits 17})
+  {:collateral-asset     "USDC"
+   :>synthetic-asset     {"BTC-USD"  "BTC"
+                          "ETH-USD"  "ETH"
+                          "LINK-USD" "LINK"}
+   :>asset-id            (enc/map-vals
+                           biginteger
+                           {"USDC" 0x02c04d8b650f44092278a7cb1e1028c82025dff622db96c934b611b84cc8de5a
+                            "BTC"  0
+                            "ETH"  1
+                            "LINK" 2})
+   :>lots                (enc/map-vals
+                           biginteger
+                           {"USDC" 1e6M
+                            "BTC"  1e10M
+                            "ETH"  1e8M
+                            "LINK" 1e7M})
+   :field-bit-lengths    {:asset-id-synthetic       128
+                          :asset-id-collateral      250
+                          :asset-id-fee             250
+                          :quantums-amount          64
+                          :nonce                    32
+                          :position-id              64
+                          :expiration-epoch-seconds 32}
+   :order-prefix         3
+   :order-padding-bits   17
+   :n-element-bits-ecdsa 251
+   :ec-curve-order       (biginteger 3618502788666131213697322783095070105526743751716087489154079457884512865583)})
+
+
+;; Starkware pads the message hash for consistency with the elliptic.js library
+(defn- ^BigInteger pad-msg-hash [^BigInteger msg-hash]
+  (let [bit-length (.bitLength msg-hash)]
+    (if (and (<= 1 (rem bit-length 8) 4) (>= bit-length 248))
+      (.multiply msg-hash (biginteger 16))
+      msg-hash)))
+
+
+(defn rfc6979-k-value
+  [^BigInteger msg-hash ^BigInteger private-key extra-entropy]
+  (first
+    (rfc6979/generate-ks
+      {:curve-order (:ec-curve-order starkware-constants)
+       :private-key private-key
+       :data (.toByteArray (pad-msg-hash msg-hash))
+       :hash-digest (rfc6979/sha-256-digest)
+       :extra-entropy (if extra-entropy
+                        (.toByteArray ^BigInteger extra-entropy)
+                        (byte-array []))})))
+
+
+(defn ^BigInteger ec-multiply
+  "Multiply the generator point on the stark curve by `k`, returning the X
+  coordinate of the resulting point."
+  [k]
+  (let [field-prime (biginteger 3618502788666131213697322783095070105623107215331596699973092056135872020481)
+        field-alpha BigInteger/ONE
+        field-beta (biginteger 3141592653589793238462643383279502884197169399375105820974944592307816406665)
+        curve (ECCurve$Fp. field-prime field-alpha field-beta)
+
+        generator-point-affine
+        [(biginteger 874739451078007766457464989774322083649278607533249481151382481072868806602)
+         (biginteger 152666792071518830868575557812948353041420400780739481342941381225525861407)]
+
+        generator-point (.createPoint curve (first generator-point-affine) (second generator-point-affine))]
+    (-> (.multiply generator-point k)
+        .normalize
+        .getAffineXCoord
+        .toBigInteger)))
+
+
+;;; N.B. it's probably worth reviewing [1] for the following code segments
+;;; [1] https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm
+
+
+(defn modular-multiplicative-inverse ; nb. called div-mod in dydx reference code
+  "Find x in [0, p) such that (m * x) % p = n"
+  [n m p]
+  (let [n (biginteger n)
+        m (biginteger m)
+        p (biginteger p)]
+    (-> (.modInverse m p)
+        (.multiply n)
+        (.mod p))))
+
+
+(defn- invalid-signature?
+  [^BigInteger k ^BigInteger r ^BigInteger s ^BigInteger msg-hash ^BigInteger private-key]
+  (let [max-value (.subtract
+                    (.pow BigInteger/TWO (:n-element-bits-ecdsa starkware-constants))
+                    BigInteger/ONE)]
+    (or
+      (not (<= 1 r max-value))
+      (not (<= 1 s max-value))
+      (zero?
+        (.mod
+          (.add (.multiply r private-key) msg-hash)
+          (:ec-curve-order starkware-constants))))))
+
+
+;; Note: sign & encode benchmarked at 1.281ms compared to 19.348ms in the
+;; reference implementation :)
+(defn starkware-sign [^BigInteger msg-hash ^BigInteger private-key]
+  (assert
+    (and
+      (pos? msg-hash)
+      (< msg-hash (Math/pow 2 (:n-element-bits-ecdsa starkware-constants)))))
+
+  ;; In the starkware version of ECDSA, not every k value is valid. If a k value
+  ;; is thrown out, a new one is generated using monotonically increasing
+  ;; entropy as a k' value in accordance with the variant of RFC 6979 described
+  ;; in [section 3.6](https://tools.ietf.org/html/rfc6979#section-3.6)
+  (loop [extra-entropy nil] ; They use: nil, 1, 2, ...
+    (let [k (rfc6979-k-value msg-hash private-key extra-entropy)
+          ;; Difference: in classical ECDSA, r = (mod (ec-multiply k) n)
+          r (ec-multiply k)
+          ; n.b. `s` is called `w` in dydx reference implementation (this is
+          ; an intermediate s in their version of ECDSA)
+          s (modular-multiplicative-inverse
+              k
+              (.add (.multiply r private-key) msg-hash)
+              (:ec-curve-order starkware-constants))]
+      (if (invalid-signature? k r s msg-hash private-key)
+        (recur (inc (or extra-entropy 0)))
+        (let [s (modular-multiplicative-inverse
+                  BigInteger/ONE
+                  s
+                  (:ec-curve-order starkware-constants))]
+          [r s])))))
+
+
+;; Instead of DER encoding, they just concat the hex strings
+(defn encode-sig [[r s]]
+  (let [hex32str (fn [^BigInteger n] (format "%064x" n))]
+    (str (hex32str r) (hex32str s))))
 
 
 (let [nonce-bit-length (get-in starkware-constants [:field-bit-lengths :nonce])
@@ -235,6 +347,10 @@
   (def stark-merkle
     (starkware-merkle-tree stark-order starkware-constants))
 
+  (def stark-hash
+    (starkware-hash stark-order starkware-constants))
+
+  priv
   (enc/qb
     100
     (starkware-hash stark-order starkware-constants)
