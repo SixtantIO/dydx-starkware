@@ -1,4 +1,4 @@
-(ns the-system.blink.exchanges.dydx.stark-constants
+(ns the-system.blink.exchanges.dydx.starkware-constants
   "Constants for dYdX cryptography and serialization.
 
   Starkware[1] teamed up with dYdX for v3 of their API, and they brought along
