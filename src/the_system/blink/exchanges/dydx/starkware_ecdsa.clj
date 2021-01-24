@@ -126,3 +126,10 @@
   "Sign `msg-hash` with Starkware's ECDSA, returning a hex string."
   [^BigInteger msg-hash ^BigInteger private-key]
   (encode-sig (sign* msg-hash private-key)))
+
+
+(defn ^BigInteger private->public
+  "Return the public key for some private key on the Stark curve."
+  [^BigInteger private-key]
+  (assert (< 0 private-key const/ec-order))
+  (ec-multiply private-key))
