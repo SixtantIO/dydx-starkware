@@ -23,13 +23,13 @@
 
 ;; We can inject these at compile time :)
 (def ^:private field-bit-lengths
-  {:asset-id-synthetic       128
-   :asset-id-collateral      250
-   :asset-id-fee             250
-   :quantums-amount          64
-   :nonce                    32
-   :position-id              64
-   :expiration-epoch-seconds 32})
+  {:asset-id-synthetic     128
+   :asset-id-collateral    250
+   :asset-id-fee           250
+   :quantums-amount        64
+   :nonce                  32
+   :position-id            64
+   :expiration-epoch-hours 32})
 
 
 (defmacro bitlen

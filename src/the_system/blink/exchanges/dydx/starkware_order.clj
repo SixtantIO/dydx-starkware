@@ -56,14 +56,27 @@
   (let [is-buying-synthetic (= side "BUY")
         synthetic-asset (>synthetic-asset market)
         quantums-amount-synthetic (to-quantums human-size (>lots synthetic-asset))
-        quantums-amount-fee (to-quantums human-limit-fee (>lots collateral-asset))
         human-cost (* (bigdec human-size) (bigdec human-price))
         quantums-amount-collateral (to-quantums
                                      human-cost
                                      (>lots collateral-asset)
                                      (if is-buying-synthetic
                                        RoundingMode/UP
-                                       RoundingMode/DOWN))]
+                                       RoundingMode/DOWN))
+        quantums-amount-fee (.toBigInteger
+                              (.setScale
+                                ^BigDecimal
+                                (* (bigdec human-limit-fee)
+                                   quantums-amount-collateral)
+                                0 RoundingMode/UP))
+
+        ;; They add this buffer to make sure orders are still valid when matched
+        ;; on-chain. We'll use the same buffer for signature consistency.
+        expiration-buffer-hours (* 24 2)
+        seconds-per-hour 3600
+        exp-hours (Math/ceil
+                    (+ (/ expiration-epoch-seconds seconds-per-hour)
+                       expiration-buffer-hours))]
     {:type "LIMIT_ORDER_WITH_FEES"
      :asset-ids {:synthetic (>asset-id synthetic-asset)
                  :collateral (>asset-id collateral-asset)
@@ -74,7 +87,7 @@
      :buying-synthetic? is-buying-synthetic
      :position-id (biginteger position-id)
      :nonce (nonce-from-cid client-id)
-     :expiration-epoch-seconds expiration-epoch-seconds}))
+     :expiration-epoch-hours (long exp-hours)}))
 
 
 ;;; Starkware order hashing, which involves hashing successive pairs of order
@@ -92,7 +105,7 @@
   Node names correspond to the variable names used in the dYdX reference
   implementation, which constructs the tree and hashes it at the same time,
   whereas here it is split out to clarify (slightly) what is going on."
-  [{:keys [asset-ids quantums buying-synthetic? position-id nonce expiration-epoch-seconds]}]
+  [{:keys [asset-ids quantums buying-synthetic? position-id nonce expiration-epoch-hours]}]
   (let [[buyq sellq buya sella]
         (if buying-synthetic?
           [(:synthetic quantums) (:collateral quantums)
@@ -113,8 +126,8 @@
                  (shift-plus (const/bitlen :position-id) position-id)
                  (shift-plus (const/bitlen :position-id) position-id)
                  (shift-plus (const/bitlen :position-id) position-id)
-                 (shift-plus (const/bitlen :expiration-epoch-seconds)
-                             (biginteger expiration-epoch-seconds))
+                 (shift-plus (const/bitlen :expiration-epoch-hours)
+                             (biginteger expiration-epoch-hours))
                  (shift-left const/order-padding-bits))}]))
 
 

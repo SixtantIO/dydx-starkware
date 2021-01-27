@@ -1,19 +1,29 @@
 (ns the-system.blink.exchanges.dydx.starkware-order-test
   (:require [clojure.test :refer :all]
+
             [the-system.blink.exchanges.dydx.starkware-order :refer :all]
             [the-system.blink.exchanges.dydx.starkware-ecdsa :as ecdsa]
+            [the-system.utils :as utils]
+
             [taoensso.encore :as enc]))
 
 
+;;; I generated these test using the dydx-v3-python client. I went in and added
+;;; print statements for important incremental values (order hash, k-value,
+;;; signature) and then ran their test suite in test_order.py[1] to collect test
+;;; vectors.
+;;; [1] https://github.com/dydxprotocol/dydx-v3-python/blob/979b82c9a2d1c468de850cc82e58fd71d2531724/tests/starkex/test_order.py#L47
+
+
 (def test-dydx-order
-  {:position-id 1
-   :client-id "91364379829165"
-   :market "BTC-USD"
-   :side "SELL"
-   :human-size 100M
-   :human-price 18000M
-   :human-limit-fee 0.015M
-   :expiration-epoch-seconds 1671658220})
+  {:position-id              12345
+   :client-id                "This is an ID that the client came up with to describe this order"
+   :market                   "ETH-USD"
+   :side                     "BUY"
+   :human-size               "145.0005"
+   :human-price              "350.00067"
+   :human-limit-fee          "0.125"
+   :expiration-epoch-seconds (utils/inst-s #inst"2020-09-17T04:15:55.028Z")})
 
 
 (def test-asset-meta-data
@@ -36,31 +46,24 @@
 
 
 (def test-stark-private-key
-  (biginteger 0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3))
+  (biginteger 0x58c7d5a90b1776bde86ebac077e053ed85b0f7164f53b080304a531947f46e3))
 
 
-;; I generated these test vectors though the dydx/starkware python clients.
-;; >>> from dydx3.starkex.order import SignableOrder
-;; >>> o = SignableOrder(position_id=1, client_id="91364379829165", market="BTC-USD", side="SELL", human_size="100", human_price="18000", human_limit_fee="0.015", expiration_epoch_seconds=1671658220)
-;; >>> o._calculate_hash()
 (deftest starkware-hash-test
   (testing "Starkware order hashing"
     (is (= (-> test-dydx-order
                (starkware-order test-asset-meta-data)
                (starkware-hash))
-           0x706608d10cb2c2b8f7be81f23468ae37452c45bdf579b276f5d6870a6a966cd))))
+           3154775399676678995470264281518126064051472251509888173914995108585914642867))))
 
 
-;; I modified the sign method in signature.py to print the chosen K value, and
-;; then ran o.sign('0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3')
-;; to check the K value.
 (deftest rfc6979-k-value-test
   (testing "Deterministic K value for starkware's variant of rfc6979"
     (is (= (-> test-dydx-order
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/rfc6979-k-value test-stark-private-key nil))
-           826191475741237249337586902222325815624295015428541147040892596733507827303))))
+           1115822616333141798463954779743658169683537934892904112369972317061051500562))))
 
 
 ;; Again, test vector generated from signature.py in the dydx reference impl
@@ -70,13 +73,16 @@
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/sign* test-stark-private-key))
-           [1147880685947926282563952332969533863428191652304924879656374215031587701320
-            1613647208029372355060822186979972378103961091500099929751858255667859304961])
+           [1625778508818496282682107048148572594505233577840638874374271828073761936765
+            781955849053684862513006295926905325331578140826503008919123218167739764436])
         "(r, s) signature pair matches")
 
     (is (= (-> test-dydx-order
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/sign test-stark-private-key))
-           "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201")
+           (str "0398287472161cba0e6386ff0b2f25f39ba37"
+                "c646b7bbadace80eee6b8e7157d01ba924272"
+                "e1e42b3211b96bbbe012e7e8101e1b3e5b83e"
+                "a90d161ad11fcced4"))
         "encoded signature matches")))
