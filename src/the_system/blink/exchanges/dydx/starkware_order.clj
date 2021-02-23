@@ -72,7 +72,7 @@
 
         ;; They add this buffer to make sure orders are still valid when matched
         ;; on-chain. We'll use the same buffer for signature consistency.
-        expiration-buffer-hours (* 24 2)
+        expiration-buffer-hours (* 24 7)
         seconds-per-hour 3600
         exp-hours (Math/ceil
                     (+ (/ expiration-epoch-seconds seconds-per-hour)
