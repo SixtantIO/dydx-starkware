@@ -54,7 +54,7 @@
     (is (= (-> test-dydx-order
                (starkware-order test-asset-meta-data)
                (starkware-hash))
-           3154775399676678995470264281518126064051472251509888173914995108585914642867))))
+           468272172109181336803312317501369707487713970735758239472271225903708635371))))
 
 
 (deftest rfc6979-k-value-test
@@ -63,7 +63,7 @@
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/rfc6979-k-value test-stark-private-key nil))
-           1115822616333141798463954779743658169683537934892904112369972317061051500562))))
+           867564722697804464741614425870660902803104828803103503995359423111403488547))))
 
 
 ;; Again, test vector generated from signature.py in the dydx reference impl
@@ -73,16 +73,16 @@
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/sign* test-stark-private-key))
-           [1625778508818496282682107048148572594505233577840638874374271828073761936765
-            781955849053684862513006295926905325331578140826503008919123218167739764436])
+           [616954775982296391160882844161258813786265994107035176522819024983509178213
+            2012400508829625117113497372803723033205432147592659566158038339509616442554])
         "(r, s) signature pair matches")
 
     (is (= (-> test-dydx-order
                (starkware-order test-asset-meta-data)
                (starkware-hash)
                (ecdsa/sign test-stark-private-key))
-           (str "0398287472161cba0e6386ff0b2f25f39ba37"
-                "c646b7bbadace80eee6b8e7157d01ba924272"
-                "e1e42b3211b96bbbe012e7e8101e1b3e5b83e"
-                "a90d161ad11fcced4"))
+           (str "015d2f1c7f68f2dc7c8f2557e0cd9cf6"
+                "f9cf62c53f2747acc4cce3b6ef241765"
+                "0472fa737331754017aad07e08d6bb09"
+                "4cba54780ea86bbccfc4d130ec04fcba"))
         "encoded signature matches")))
