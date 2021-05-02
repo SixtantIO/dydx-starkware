@@ -1,6 +1,6 @@
-(ns the-system.blink.exchanges.dydx.pedersen-test
+(ns io.sixtant.dydx-starkware.pedersen-test
   (:require [clojure.test :refer :all]
-            [the-system.blink.exchanges.dydx.pedersen :refer :all]))
+            [io.sixtant.dydx-starkware.pedersen :refer :all]))
 
 
 ;; Test cases taken from:

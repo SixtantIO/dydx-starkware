@@ -1,9 +1,8 @@
-(ns the-system.blink.exchanges.dydx.starkware-order-test
+(ns io.sixtant.dydx-starkware.starkware-order-test
   (:require [clojure.test :refer :all]
 
-            [the-system.blink.exchanges.dydx.starkware-order :refer :all]
-            [the-system.blink.exchanges.dydx.starkware-ecdsa :as ecdsa]
-            [the-system.utils :as utils]
+            [io.sixtant.dydx-starkware.starkware-order :refer :all]
+            [io.sixtant.dydx-starkware.starkware-ecdsa :as ecdsa]
 
             [taoensso.encore :as enc]))
 
@@ -23,7 +22,7 @@
    :human-size               "145.0005"
    :human-price              "350.00067"
    :human-limit-fee          "0.125"
-   :expiration-epoch-seconds (utils/inst-s #inst"2020-09-17T04:15:55.028Z")})
+   :expiration-epoch-seconds (-> #inst"2020-09-17T04:15:55.028Z" inst-ms (/ 1000.0))})
 
 
 (def test-asset-meta-data

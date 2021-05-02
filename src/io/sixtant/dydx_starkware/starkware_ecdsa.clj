@@ -1,4 +1,4 @@
-(ns the-system.blink.exchanges.dydx.starkware-ecdsa
+(ns io.sixtant.dydx-starkware.starkware-ecdsa
   "Starkware's variation on classic ECDSA, transcribed from reference impl[1].
 
   They use a variant on RFC 6979 to generate a deterministic 'k' constant,
@@ -6,7 +6,7 @@
 
   [1] https://github.com/dydxprotocol/dydx-v3-python/blob/35bc6800d44d9f2d096e0f036601269b795aebec/dydx3/starkex/starkex_resources/signature.py
   [2] https://github.com/matthewdowney/rfc6979"
-  (:require [the-system.blink.exchanges.dydx.starkware-constants :as const]
+  (:require [io.sixtant.dydx-starkware.starkware-constants :as const]
             [io.sixtant.rfc6979 :as rfc6979])
   (:import (org.bouncycastle.math.ec ECCurve$Fp)))
 

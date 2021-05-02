@@ -1,4 +1,4 @@
-(ns the-system.blink.exchanges.dydx.starkware-order
+(ns io.sixtant.dydx-starkware.starkware-order
   "For creating & hashing Starkware orders.
 
   Order creation goes through the L2 (Starkware), so order placement requests
@@ -6,9 +6,8 @@
   HTTP requests which are signed with dYdX API keys.
 
   See: https://docsv3.dydx.exchange/#authentication"
-  (:require [the-system.blink.exchanges.dydx.pedersen :as pedersen]
-            [the-system.blink.exchanges.dydx.starkware-constants :as const]
-            [the-system.utils :as utils]
+  (:require [io.sixtant.dydx-starkware.pedersen :as pedersen]
+            [io.sixtant.dydx-starkware.starkware-constants :as const]
 
             [clojure.walk :as walk]
             [clojure.string :as string]
@@ -153,80 +152,3 @@
   (-> starkware-order
       (starkware-merkle-tree)
       (hash-merkle-tree pedersen/pedersen-hash)))
-
-
-(comment
-  ;; TODO: This can happen directly in dydx.clj
-  (defn dydx-order
-    [{:keys [market side ^BigDecimal qty ^BigDecimal price iid post-only?]}
-     ^BigDecimal limit-fee
-     expiration]
-    {:market      (utils/show-upper market "-")
-     :side        (case side :bids "BUY" :asks "SELL")
-     :type        "LIMIT"
-     :postOnly    (if post-only? true false)
-     :size        (.toPlainString (.stripTrailingZeros qty))
-     :price       (.toPlainString (.stripTrailingZeros price))
-     :limitFee    (.toPlainString (.stripTrailingZeros limit-fee))
-     :expiration  expiration
-     :timeInForce "GTT"
-     :clientId    iid})
-
-
-  ;; TODO: Benchmark this vs reference implementation
-  (defn sign-order [dydx-order asset-meta-data stark-private-key]
-    (-> {:position-id              1
-         :client-id                (:clientId dydx-order)
-         :market                   (:market dydx-order)
-         :side                     (:side dydx-order)
-         :human-size               (:size dydx-order)
-         :human-price              (:price dydx-order)
-         :human-limit-fee          (:limitFee dydx-order)
-         :expiration-epoch-seconds (utils/inst-s (:expiration dydx-order))}
-        (starkware-order asset-meta-data)
-        (starkware-hash)
-        (starkware-sign stark-private-key)
-        (encode-sig)))
-
-
-  ;; TODO: Benchmark this vs reference implementation
-  (defn sign-request [{:keys [path method inst body] :as req} dydx-private-key]
-    (let [iso-ts (utils/pr-inst-iso inst)
-          method (string/upper-case (name method))
-          message (str iso-ts method path body)
-          mhash (-> ^String (sha256/sha256 message)
-                    (BigInteger. 16)
-                    (.shiftRight 5))
-          sig (encode-sig (starkware-sign mhash dydx-private-key))]
-      (assoc req :sig sig)))
-
-
-  (def test-request
-    {:path   "/v3/orders"
-     :method :post
-     :inst   #inst "2021-01-23T17:38:04.039Z"
-     :body   (json/write-str
-               ;; Ensure the same JSON string as the one I generated in the
-               ;; reference implementation
-               (array-map
-                 :market "BTC-USD",
-                 :side "SELL",
-                 :type "LIMIT",
-                 :timeInForce "GTT",
-                 :size "100",
-                 :price "18000",
-                 :limitFee "0.015",
-                 :expiration "2022-12-21T21:30:20.200Z",
-                 :postOnly false,
-                 :clientId "91364379829165",
-                 :signature "0289ad6d0177bf3ddbdbaf655ee1ef705be79c1a19cab995de25fcb09f05824803914abd7d995c03a0bf601812fd76dd6205b01976a0e7d1158c0929a5343201"))})
-
-
-  (def test-dydx-private-key
-    (biginteger 0x2a709f4253e841f274d192b8270d7a7c41503c037b556509d399dddf79400b1))
-
-
-  (deftest sign-request-test
-           (testing "dydx request signature"
-                    (is (= (-> test-request (sign-request test-dydx-private-key) :sig)
-                           "05bdd9f24ad4ecec1a34efdf8f05a6765240ba6b1a5e49d9352fbda41968e22205db4f23bf03a58e2c5ad8ece4aefa4799e35306454a4fa3e3a14a782e9dfa65")))))

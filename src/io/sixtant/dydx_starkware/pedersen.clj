@@ -1,4 +1,4 @@
-(ns the-system.blink.exchanges.dydx.pedersen
+(ns io.sixtant.dydx-starkware.pedersen
   "A Starkware Pedersen hash, as implemented in dydxprotocol/dydx-v3-python[1].
 
   [1] https://github.com/dydxprotocol/dydx-v3-python/blob/35bc6800d44d9f2d096e0f036601269b795aebec/dydx3/starkex/starkex_resources/signature.py#L52"
@@ -119,7 +119,7 @@
 
 (comment
   ;; It doesn't produce negative hashes, right? That would ruin Starkware ECDSA
-  (dotimes [_ 50000]
+  (dotimes [_ 1000]
     (assert
       (pos?
         (pedersen-hash (rand-int Integer/MAX_VALUE) (rand-int Integer/MAX_VALUE))))))
