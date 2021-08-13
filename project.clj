@@ -1,4 +1,4 @@
-(defproject dydx-starkware "0.1.0"
+(defproject dydx-starkware "0.2.0"
   :description "Creation, hashing, and signing of orders with Starkware's L2 as used by dYdX."
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
             :url "https://www.eclipse.org/legal/epl-2.0/"}

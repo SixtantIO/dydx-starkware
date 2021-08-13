@@ -54,7 +54,7 @@
 
 (deftest sign-order-test
   (testing "dydx order signature"
-    (let [amd (asset-meta-data true)
+    (let [amd asset-meta-data-testnet
           signed (sign-order mock-start-privkey mock-order-request amd)]
       (is (= (:signature signed) (:signature mock-signed-request))
           "signature matches the one produced by dydx3-python")
