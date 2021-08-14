@@ -10,7 +10,6 @@
             [io.sixtant.dydx-starkware.starkware-constants :as const]
 
             [clojure.walk :as walk]
-            [clojure.string :as string]
 
             [pandect.algo.sha256 :as sha256])
   (:import (java.math RoundingMode)))
