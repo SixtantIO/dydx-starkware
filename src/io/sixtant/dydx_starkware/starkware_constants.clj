@@ -20,9 +20,14 @@
 (def ^:const order-prefix 0x03)
 (def ^:const order-padding-bits 0x11)
 
+(def ^:const conditional-transfer-fee-asset-id 0x0)
+(def ^:const conditional-transfer-max-fee 0x0)
+(def ^:const conditional-transfer-prefix 0x05)
+(def ^:const conditional-transfer-padding-bits 0x51)
+
 
 ;; We can inject these at compile time :)
-(def ^:private field-bit-lengths
+(def ^:private order-field-bit-lengths
   {:asset-id-synthetic     128
    :asset-id-collateral    250
    :asset-id-fee           250
@@ -32,16 +37,35 @@
    :expiration-epoch-hours 32})
 
 
-(defmacro bitlen
+(def ^:private conditional-transfer-field-bit-lengths
+  {:asset-id               250
+   :receiver-public-key    251
+   :position-id            64
+   :condition              251
+   :quantums-amount        64
+   :nonce                  32
+   :expiration-epoch-hours 32})
+
+
+(defmacro obits
   "Resolve at compile time to the bit length for a stark order field."
   [field-id]
   (if (keyword? field-id) ; compile time reference
-    (truss/have number? (field-bit-lengths field-id))
+    (truss/have number? (order-field-bit-lengths field-id))
+    (throw (IllegalArgumentException. "Expected compile-time field name."))))
+
+
+(defmacro ctbits
+  "Resolve at compile time to the bit length for a stark conditional transfer
+  field."
+  [field-id]
+  (if (keyword? field-id) ; compile time reference
+    (truss/have number? (conditional-transfer-field-bit-lengths field-id))
     (throw (IllegalArgumentException. "Expected compile-time field name."))))
 
 
 (comment
-  (macroexpand '(bitlen :nonce))
+  (macroexpand '(obits :nonce))
   ;=> 32
   )
 

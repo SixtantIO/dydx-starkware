@@ -19,15 +19,17 @@
   (:import (org.bouncycastle.util.encoders Hex)))
 
 
+(set! *warn-on-reflection* true)
+
+
 ;;; ABI primitive types and their hex string encoding
 
 
 (defmulti encode
-  "Encode a single typed value with the ABI, return a hex string of the
-  corresponding `bit-size`. If `bit-size` is nil, don't use padding.
+  "Encode a single typed value with the ABI, return a hex string.
 
   Each value is {:type _, :value _, :width _}, where :width is some number of
-  bytes, and this method dispatches on :type."
+  bytes (might be nil), and this method dispatches on :type."
   (fn [{:keys [type value width]}]
     type))
 
@@ -96,7 +98,8 @@
 
 
 (defn string [s] {:type :string :value s :width nil})
-(defmethod encode :string [x] (Hex/toHexString (.getBytes (:value x) "UTF-8")))
+(defmethod encode :string [x]
+  (Hex/toHexString (.getBytes ^String (:value x) "UTF-8")))
 
 
 ;;; Algorithm for packed encoding of ABI values, exactly as done by Solidity.
@@ -108,8 +111,7 @@
    (encode-packed* value nil))
   ([value ?force-width]
    (if (map? value)
-     (encode
-       (cond-> value ?force-width (assoc :width ?force-width)))
+     (encode (cond-> value ?force-width (assoc :width ?force-width)))
      (do
        (assert (apply = (map :type value)) "array values are the same type")
        (assert (apply = (map :width value)) "array values are the same type")

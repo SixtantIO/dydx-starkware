@@ -28,4 +28,11 @@
     (is (= (solidity-keccak (map uint8 [97 98 99]))
            "0x233002c671295529bcc50b76a2ef2b0de2dac2d93945fca745255de1a9e4017e"))
     (is (= (solidity-keccak (address 0x49EdDD3769c0712032808D86597B84ac5c2F5614))
-           "0x2ff37b5607484cd4eecf6d13292e22bd6e5401eaffcc07e279583bc742c68882"))))
+           "0x2ff37b5607484cd4eecf6d13292e22bd6e5401eaffcc07e279583bc742c68882")))
+  (testing "Test case from https://github.com/dydxprotocol/dydx-v3-python/blob/2df5cda7492f60119d50cd15ce3a30a4d58504ec/tests/starkex/test_helpers.py#L24"
+    (is (= (solidity-keccak
+             (address 0x1234567890123456789012345678901234567890)
+             (uint256 (biginteger (* 123.456 (Math/pow 10 3))))
+             (address 0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)
+             (uint256 0x1234567890abcdef))
+           "0x34052387b5efb6132a42b244cff52a85a507ab319c414564d7a89207d4473672"))))

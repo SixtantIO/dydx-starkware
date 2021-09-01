@@ -23,4 +23,4 @@
     (.format utc-format d)))
 
 
-(defn inst-s [i] (-> i inst-ms (/ 1000.0)))
+(defn inst-s [i] (/ (inst-ms i) 1000.0))
