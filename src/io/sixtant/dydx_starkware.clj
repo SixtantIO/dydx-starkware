@@ -37,10 +37,9 @@
 
   Takes dYdX fast withdrawal data and returns a signed fast withdrawal request."
   [stark-private-key dydx-fast-withdrawal asset-meta-data]
-  ;; TODO
-  #_(let [signature (-> dydx-fast-withdrawal
-                      (sw/fast-withdrawal asset-meta-data)
-                      (sw/hash-fast-withdrawal)
+  (let [signature (-> dydx-fast-withdrawal
+                      (stark/conditional-transfer asset-meta-data)
+                      (stark/hash-conditional-transfer)
                       (ecdsa/sign stark-private-key))]
     (-> dydx-fast-withdrawal
         (assoc :signature signature)
@@ -200,11 +199,13 @@
 
 
 (comment
-  ;; Example usage:
+  ;;; Example usage:
 
   (require '[io.sixtant.dydx-starkware :as dydx])
 
-  ; (1) Construct order request data (see https://docs.dydx.exchange/#create-a-new-order)
+  ;;; # Order placement (see https://docs.dydx.exchange/#create-a-new-order)
+
+  ; (1) Construct order request data
   (def order
     {:positionId  1
      :clientId    "91364379829165"
@@ -225,7 +226,7 @@
       (dydx/sign-order stark-priv order dydx/asset-meta-data)))
 
 
-  ; (3) Sign the request data second time with the dYdX api credentials
+  ; (3) Sign the request data a second time with the dYdX api credentials
   (let [creds {:key        "11f3726d-72c9-f3c7-eed9-980655c369d6"
                :secret     "B6_eKDmHrm9L-DdVVRU75LC9W_k67TI4tCgoeN5a"
                :passphrase "TvsLWDMQGA2-9MXwxV-e"}]
@@ -248,4 +249,74 @@
                   "DYDX-SIGNATURE"  "6nDdDFAfBi2x4BsfRolT-1631f1zXCdar3-o1ifMk6s="
                   "DYDX-API-KEY"    "11f3726d-72c9-f3c7-eed9-980655c369d6"
                   "DYDX-TIMESTAMP"  "2021-05-02T19:58:03.591Z"
-                  "DYDX-PASSPHRASE" "TvsLWDMQGA2-9MXwxV-e"}})
+                  "DYDX-PASSPHRASE" "TvsLWDMQGA2-9MXwxV-e"}}
+
+  ;;; # Fast withdrawal
+  ;;; (see https://docs.dydx.exchange/#get-fast-withdrawal-liquidity and
+  ;;; https://docs.dydx.exchange/#create-fast-withdrawal)
+
+  ; (1) Construct the fast withdrawal data. This is still missing the
+  ; :debitAmount, which is decided by the liquidity provider for the withdrawal,
+  ; who quotes you a :debitAmount for which the LP is willing to send you
+  ; :creditAmount. I.e. if :creditAmount is 1000 and the LP quotes a
+  ; :debitAmount of 1001, you pay a fee of $1.
+  (def fast-withdrawal
+    {:creditAmount "1000" ; the amount you receive net of fees
+     :creditAsset "USDC"
+
+     ; your position id and address
+     :positionId "12345"
+     :toAddress "0x0000000000000000000000000000000000000123"
+
+     ; id for the txn
+     :clientId "13f3ea90-27a7-4b78-b27a-54ae69791ec5"
+
+     ; must be at least 7 days in the future
+     :expiration #inst"2021-09-09"})
+
+  ; (2) Get fast withdrawal liquidity (fee paid + provider data).
+  (def liquidity
+    (let [base "https://api.dydx.exchange"
+          path "/v3/fast-withdrawals?creditAsset=USDC&creditAmount="
+          amount (:creditAmount fast-withdrawal)
+          resp (clojure.data.json/read-str (slurp (str base path amount)))
+          ; Take the first quote returned, IRL you might want to check for the
+          ; lowest fee. Fee is the difference between debit and credit amounts.
+          [lpPositionId lpData] (first (get resp "liquidityProviders"))]
+
+      (assert lpPositionId "There is a liquidity provider available.")
+      (assert
+        (> (bigdec (get lpData "availableFunds")) (bigdec amount))
+        "The LP has funds available to satisfy the requested amount.")
+
+      {:lpPositionId lpPositionId
+       :lpStarkPublicKey (get lpData "starkKey")
+       :debitAmount (get-in lpData ["quote" "debitAmount"])
+       :debitAsset "USDC"}))
+
+  ;=>
+  {:lpPositionId "2",
+   :lpStarkPublicKey "020ce2e0a138d6ba48b7d4a22ee0b0913501de38795c187408372e54ec86199a",
+   :debitAmount "1063.660000",
+   :debitAsset "USDC"}
+
+  ; (3) If the fee is acceptable, merge the data into the request.
+  (def full-fast-withdrawal
+    (merge fast-withdrawal liquidity))
+
+  ; (4) Sign the order data with the Starkware private key
+  (def signed-withdrawal
+    (let [stark-priv (biginteger 0x10df7f0ca8e3c1e1bd56693bb2725342c3fe08d7042ee6a4d2dad592b9a90c3)]
+      (sign-fast-withdrawal stark-priv full-fast-withdrawal dydx/asset-meta-data)))
+
+  ; (5) You now have the withdrawal data to use with `dydx/sign-request`
+  signed-withdrawal
+  {:debitAsset "USDC",
+   :clientId "13f3ea90-27a7-4b78-b27a-54ae69791ec5",
+   :toAddress "0x0000000000000000000000000000000000000123",
+   :expiration "2021-09-09T00:00:00.000Z",
+   :signature "007d8b9e47a727bbf0ec397a15043557e0246d60c0c10cc647f688c1e665e8790364b0bb2f7feaa6b736a7443bf8e5bca5384443c2a4aa54374cf1bec48640f9",
+   :creditAmount "1000",
+   :creditAsset "USDC",
+   :debitAmount "1063.660000",
+   :lpPositionId "2"})
