@@ -77,14 +77,18 @@
 
 
 (def test-dydx-order
-  {:position-id              12345
-   :client-id                "This is an ID that the client came up with to describe this order"
-   :market                   "ETH-USD"
-   :side                     "BUY"
-   :human-size               "145.0005"
-   :human-price              "350.00067"
-   :human-limit-fee          "0.125"
-   :expiration-epoch-seconds (-> #inst"2020-09-17T04:15:55.028Z" inst-ms (/ 1000.0))})
+  {:positionId 12345
+   :clientId "This is an ID that the client came up with to describe this order"
+   :market "ETH-USD"
+   :side "BUY"
+   :size "145.0005"
+   :price "350.00067"
+   :limitFee "0.125"
+   :expiration #inst"2020-09-17T04:15:55.028Z"
+
+   :type "LIMIT"
+   :postOnly false
+   :timeInForce "GTT"})
 
 
 (def test-asset-meta-data

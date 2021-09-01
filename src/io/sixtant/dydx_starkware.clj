@@ -1,6 +1,6 @@
 (ns io.sixtant.dydx-starkware
-  "Creation, hashing, and signing of orders with Starkware's L2 as used by dYdX."
-  (:require [io.sixtant.dydx-starkware.starkware-order :as so]
+  "Creation, hashing, and signing of requests for dYdX / Starkware's L2."
+  (:require [io.sixtant.dydx-starkware.starkware-data :as stark]
             [io.sixtant.dydx-starkware.starkware-ecdsa :as ecdsa]
             [io.sixtant.dydx-starkware.time :as t]
 
@@ -17,26 +17,34 @@
 
 (defn sign-order
   "Order requests need to be signed by a separate API key *before* being signed
-  like a normal request.
+  like a normal request (for starkware proofs).
 
-  Takes dYdX order data (see usages of this function in tests for fields) and
-  returns a signed order request."
+  Takes dYdX order data and returns a signed order request."
   [stark-private-key dydx-order asset-meta-data]
-  (let [signature
-        (-> {:position-id              (:positionId dydx-order)
-             :client-id                (:clientId dydx-order)
-             :market                   (:market dydx-order)
-             :side                     (:side dydx-order)
-             :human-size               (:size dydx-order)
-             :human-price              (:price dydx-order)
-             :human-limit-fee          (:limitFee dydx-order)
-             :expiration-epoch-seconds (t/inst-s (:expiration dydx-order))}
-            (so/starkware-order asset-meta-data)
-            (so/starkware-hash)
-            (ecdsa/sign stark-private-key))]
+  (let [signature (-> dydx-order
+                      (stark/order asset-meta-data)
+                      (stark/hash-order)
+                      (ecdsa/sign stark-private-key))]
     (-> dydx-order
         (assoc :signature signature)
         (dissoc :positionId) ; just used for signing, not a valid request field
+        (update :expiration t/pr-inst-iso))))
+
+
+(defn sign-fast-withdrawal
+  "Fast withdrawal requests need to be signed by a separate API key *before*
+  being signed like a normal request (for starkware proofs).
+
+  Takes dYdX fast withdrawal data and returns a signed fast withdrawal request."
+  [stark-private-key dydx-fast-withdrawal asset-meta-data]
+  ;; TODO
+  #_(let [signature (-> dydx-fast-withdrawal
+                      (sw/fast-withdrawal asset-meta-data)
+                      (sw/hash-fast-withdrawal)
+                      (ecdsa/sign stark-private-key))]
+    (-> dydx-fast-withdrawal
+        (assoc :signature signature)
+        (dissoc :positionId :lpStarkPublicKey) ; just used for signing
         (update :expiration t/pr-inst-iso))))
 
 
@@ -143,13 +151,18 @@
                         "ALGO"  1e6M
                         "ZRX"   1e6M
                         "XMR"   1e8M
-                        "ZEC"   1e8M})})
+                        "ZEC"   1e8M})
+   :token-contracts {"USDC" "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"}
+   :contracts {:fact-registry "0xBE9a129909EbCb954bC065536D2bfAfBd170d27A"}})
 
 
 (def asset-meta-data-testnet
-  "Same as `asset-meta-data`, except with dYdX's testnet USDC contract."
+  "Same as `asset-meta-data`, except with testnet contracts."
   (let [addr 0x02c04d8b650f44092278a7cb1e1028c82025dff622db96c934b611b84cc8de5a]
-    (assoc-in asset-meta-data [:>asset-id "USDC"] (biginteger addr))))
+    (-> asset-meta-data
+        (assoc-in [:>asset-id "USDC"] (biginteger addr))
+        (assoc-in [:token-contracts "USDC"] "0x8707A5bf4C2842d46B31A405Ba41b858C0F876c4")
+        (assoc-in [:contracts :fact-registry] "0x8Fb814935f7E63DEB304B500180e19dF5167B50e"))))
 
 
 (defn bytes->urlb64 [^bytes b] (String. (.encode (Base64/getUrlEncoder) b)))
@@ -225,7 +238,7 @@
       (java.util.Date.)
       creds))
 
-  ; Done -- you now have a signed RING request
+  ; Done -- you now have a signed request
   {:method       :post
    :url          "https://api.dydx.exchange/v3/orders"
    :accept       "application/json"

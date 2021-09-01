@@ -82,15 +82,12 @@
   "Build the Starkware order which corresponds to some dYdX placement request.
 
   The Starkware order only includes a subset of the dYdX fields."
-  [{:keys [position-id client-id market side human-size human-price
-           human-limit-fee expiration-epoch-seconds]}
+  [{:keys [positionId clientId market side size price limitFee expiration]}
    {:keys [collateral-asset >synthetic-asset >asset-id >lots]}]
   (let [is-buying-synthetic (= side "BUY")
         synthetic-asset (>synthetic-asset market)
-        quantums-amount-synthetic (to-quantums
-                                    human-size
-                                    (>lots synthetic-asset))
-        human-cost (* (bigdec human-size) (bigdec human-price))
+        quantums-amount-synthetic (to-quantums size (>lots synthetic-asset))
+        human-cost (* (bigdec size) (bigdec price))
         quantums-amount-collateral (to-quantums
                                      human-cost
                                      (>lots collateral-asset)
@@ -100,17 +97,8 @@
         quantums-amount-fee (.toBigInteger
                               (.setScale
                                 ^BigDecimal
-                                (* (bigdec human-limit-fee)
-                                   quantums-amount-collateral)
-                                0 RoundingMode/UP))
-
-        ;; They add this buffer to make sure orders are still valid when matched
-        ;; on-chain. We'll use the same buffer for signature consistency.
-        expiration-buffer-hours (* 24 7)
-        seconds-per-hour 3600
-        exp-hours (Math/ceil
-                    (+ (/ expiration-epoch-seconds seconds-per-hour)
-                       expiration-buffer-hours))]
+                                (* (bigdec limitFee) quantums-amount-collateral)
+                                0 RoundingMode/UP))]
     {:type "LIMIT_ORDER_WITH_FEES"
      :asset-ids {:synthetic (>asset-id synthetic-asset)
                  :collateral (>asset-id collateral-asset)
@@ -119,9 +107,9 @@
                 :collateral quantums-amount-collateral
                 :fee quantums-amount-fee}
      :buying-synthetic? is-buying-synthetic
-     :position-id (biginteger position-id)
-     :nonce (nonce-from-cid client-id)
-     :expiration-epoch-hours (long exp-hours)}))
+     :position-id (biginteger positionId)
+     :nonce (nonce-from-cid clientId)
+     :expiration-epoch-hours (exp-hours expiration (* 24 7))}))
 
 
 ;;; Starkware order hashing, which involves hashing successive pairs of order
