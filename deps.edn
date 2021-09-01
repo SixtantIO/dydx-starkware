@@ -1,4 +1,4 @@
-{:paths ["src/" "resources/"]
+{:paths   ["src/" "resources/"]
  :deps    {org.clojure/clojure             {:mvn/version "1.10.3"}
            org.clojure/data.json           {:mvn/version "0.2.6"} ; serialize requests
 
@@ -9,10 +9,14 @@
            com.taoensso/encore             {:mvn/version "3.19.0"} ; supplements the std lib
            com.taoensso/tufte              {:mvn/version "2.2.0"} ; benchmarking
            com.taoensso/truss              {:mvn/version "1.6.0"}} ; assertions
- :aliases {:dev  {:extra-paths ["test"]}
+ :aliases {:dev  {:extra-paths ["test" "script"]}
+           :frontend {:extra-paths ["script"]
+                      :extra-deps {io.sixtant/secrets
+                                   {:git/url "http://github.com/sixtantio/secrets"
+                                    :sha "82637a1674e023dc442869a5eab8a3ae9fc2a563"}}}
            :test {:extra-paths ["test"]
-                  :extra-deps {io.github.cognitect-labs/test-runner
-                               {:git/url "https://github.com/cognitect-labs/test-runner.git"
-                                :sha "8c3f22363d63715de4087b038d79ae0de36a3263"}}
-                  :main-opts ["-m" "cognitect.test-runner"]
-                  :exec-fn cognitect.test-runner.api/test}}}
+                  :extra-deps  {io.github.cognitect-labs/test-runner
+                                {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                 :sha     "8c3f22363d63715de4087b038d79ae0de36a3263"}}
+                  :main-opts   ["-m" "cognitect.test-runner"]
+                  :exec-fn     cognitect.test-runner.api/test}}}

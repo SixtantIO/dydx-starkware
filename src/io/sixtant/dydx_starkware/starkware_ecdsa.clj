@@ -8,7 +8,7 @@
   [2] https://github.com/matthewdowney/rfc6979"
   (:require [io.sixtant.dydx-starkware.starkware-constants :as const]
             [io.sixtant.rfc6979 :as rfc6979])
-  (:import (org.bouncycastle.math.ec ECCurve$Fp)))
+  (:import (org.bouncycastle.math.ec ECCurve$Fp ECPoint)))
 
 
 (set! *warn-on-reflection* true)
@@ -37,19 +37,22 @@
                         (byte-array []))})))
 
 
-(defn ^BigInteger ec-multiply
-  "Multiply the generator point on the stark curve by `k`, returning the X
-  coordinate of the resulting point."
-  [k]
+(defn ^ECPoint ec-multiply* [k]
   (let [curve (ECCurve$Fp. const/ec-prime const/ec-alpha const/ec-beta)
         generator-point (.createPoint
                           curve
                           const/ec-generator-point-x
                           const/ec-generator-point-y)]
-    (-> (.multiply generator-point k)
-        .normalize
-        .getAffineXCoord
-        .toBigInteger)))
+    (.normalize (.multiply generator-point k))))
+
+
+(defn ^BigInteger ec-multiply
+  "Multiply the generator point on the stark curve by `k`, returning the X
+  coordinate of the resulting point."
+  [k]
+  (-> (ec-multiply* k)
+      .getAffineXCoord
+      .toBigInteger))
 
 
 ;;; N.B. it's probably worth reviewing [1] for the following code segments
